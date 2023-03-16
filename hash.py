@@ -10,10 +10,13 @@ import time
 
 def sha3_512_hash(file_path):
     hasher = hashlib.sha3_512()
-    with open(file_path, 'rb') as f:
-        while (chunk := f.read(8192)):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+    try:
+        with open(file_path, 'rb') as f:
+            while (chunk := f.read(8192)):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+    except PermissionError:
+        return None
 
 def read_list_txt(file_path):
     file_hash_map = {}
@@ -39,32 +42,41 @@ def is_excluded(file_path, excluded_patterns):
 
 def check_files_and_write_results(file_hash_map, root_dir, result_file_path, script_file_path, excluded_patterns):
     excluded_patterns |= {list_txt_path, result_txt_path, script_file_path, exclude_txt_path}
+    
+    # error.txt 파일을 작성하고 엽니다.
+    with open("error.txt", "w", encoding="utf-8") as error_file:
 
-    with open(result_file_path, 'w', encoding='utf-8') as result_file:
-        with alive_bar(len(file_hash_map), title="Checking files") as bar:
-            for folder, _, files in os.walk(root_dir):
-                for file in files:
-                    file_path = Path(folder) / file
-                    file_path_absolute = file_path.resolve()
+        with open(result_file_path, 'w', encoding='utf-8') as result_file:
+            with alive_bar(len(file_hash_map), title="Checking files") as bar:
+                for folder, _, files in os.walk(root_dir):
+                    for file in files:
+                        file_path = Path(folder) / file
+                        file_path_absolute = file_path.resolve()
 
-                    if is_excluded(str(file_path_absolute), excluded_patterns):
-                        continue
+                        if is_excluded(str(file_path_absolute), excluded_patterns):
+                            continue
 
-                    current_hash = sha3_512_hash(file_path)
-                    mod_time = datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                        current_hash = sha3_512_hash(file_path)
+                        
+                        if current_hash is None:
+                            error_file.write(f"Permission denied: {file_path_absolute}\n")
+                            continue
 
-                    if file_path_absolute in file_hash_map:
-                        original_hash = file_hash_map[file_path_absolute]
-                        if current_hash.lower() != original_hash.lower():
-                            result_file.write(f"{file}\nOriginal SHA3-512: {original_hash}\nCurrent SHA3-512: {current_hash}\nModified on: {mod_time}\n\n")
-                        del file_hash_map[file_path_absolute]
-                    else:
-                        result_file.write(f"{file}\nSHA3-512: {current_hash}\nModified on: {mod_time}\n\n")
+                        mod_time = datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
 
-                    bar()
+                        if file_path_absolute in file_hash_map:
+                            original_hash = file_hash_map[file_path_absolute]
+                            if current_hash.lower() != original_hash.lower():
+                                result_file.write(f"{file}\nOriginal SHA3-512: {original_hash}\nCurrent SHA3-512: {current_hash}\nModified on: {mod_time}\n\n")
+                            del file_hash_map[file_path_absolute]
+                        else:
+                            result_file.write(f"{file}\nSHA3-512: {current_hash}\nModified on: {mod_time}\n\n")
 
-        for file, original_hash in file_hash_map.items():
-            result_file.write(f"{file}\nOriginal SHA3-512: {original_hash}\nMissing\n\n")
+                        bar()
+
+
+                    for file, original_hash in file_hash_map.items():
+                        result_file.write(f"{file}\nOriginal SHA3-512: {original_hash}\nMissing\n\n")
 
 if __name__ == "__main__":
     list_txt_path = "list.txt"
